@@ -15,17 +15,22 @@
 
 ## 技术栈
 
-- 后端：Node.js + Express 5 + pg，Google JS 代码规范（eslint-config-google）
 - 前端：React 19 + Vite，Google JS 代码规范 + react/recommended +
   react-hooks/recommended
+- 后端：Supabase PostgreSQL 函数（经 PostgREST 直连，无需自建服务），
+  见 `server/scripts/postgrest.mjs`
 - 数据库：Supabase PostgreSQL（`server/.env` 中的 `DATABASE_URL`）
+- 仓库中另保留 Express 5 后端（server/src/）作为本地开发备选，
+  线上前端不依赖它
 
 ## 快速开始
 
 ```bash
 npm install          # 安装所有依赖（npm workspaces）
 npm run seed         # 解析 doc/试题.docx 并灌入数据库（幂等，可重复执行）
-npm run dev          # 同时启动后端(:3002)与前端(:5173)
+npm run postgrest -w server   # 创建 PostgREST RPC 函数与安全边界（幂等）
+cp web/.env.example web/.env  # 填入 VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY
+npm run dev -w web   # 前端 :5173，直连 Supabase
 ```
 
 打开 http://localhost:5173 即可刷题。
@@ -40,22 +45,19 @@ npm run build -w web # 前端生产构建
 ## 部署（GitHub Pages）
 
 推送到 main 后，GitHub Actions 自动把前端构建并发布到
-https://kaishui.github.io/shuati/ （构建时注入
-`VITE_BASE=/shuati/` 与 `VITE_API_BASE=http://localhost:3002`）。
+https://kaishui.github.io/shuati/ 。构建时从 GitHub Secrets 注入
+`SUPABASE_URL` / `SUPABASE_ANON_KEY`（对应 VITE_ 变量）。
 
-使用线上页面的步骤：
+前端**直连 Supabase PostgREST**，无自有后端服务：电脑、手机、
+任意浏览器打开即用，无权限弹窗。
 
-1. 本机保持后端运行：`npm run dev:server`
-2. 打开 https://kaishui.github.io/shuati/
-3. 首次访问浏览器会弹出「访问本地网络」权限询问（Chrome 138+
-   的 Local Network Access 机制），选择**允许**
+安全说明：
 
-限制说明：
-
-- 线上静态页通过 `http://localhost:3002` 调用后端，只在与后端
-  同一台电脑上可用；手机访问需要把后端部署到公网
-- Supabase（ap-southeast-2）跨境冷连接约 4 秒，页面首次加载稍慢，
-  之后走连接池恢复正常
+- 三张业务表对匿名角色完全关闭（RLS + 撤销默认授权），
+  所有读写只经 `SECURITY DEFINER` 函数，答案列绝不直接下发
+- anon key 是 Supabase 公开设计的访问凭证，可放心放入前端构建
+- 已知边界：任何人拿到 anon key 都能调用 `submit_answer` 伪造
+  作答记录（个人刷题工具可接受）；后续如需收紧可引入 Supabase Auth
 
 ## 目录结构
 

@@ -1,5 +1,6 @@
 node_modules/
 web/dist/
 server/.env
+web/.env
 doc/试题.txt
 .DS_Store
