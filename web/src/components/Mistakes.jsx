@@ -38,6 +38,16 @@ export default function Mistakes({onPractice, onBack}) {
       <main className="page__body">
         {error && <div className="alert alert--error">{error}</div>}
 
+        {/* 重练按钮不依赖列表加载完成，进入页面即可开练。 */}
+        {(!items || items.length > 0) && (
+          <button
+              type="button"
+              className="btn btn--primary btn--block"
+              onClick={() => onPractice(items?.length ?? 10)}>
+            {items ? `重练错题（${items.length} 题）` : '重练错题'}
+          </button>
+        )}
+
         {!items && !error && (
           <div className="empty">
             <p className="empty__text">加载中…</p>
@@ -53,12 +63,6 @@ export default function Mistakes({onPractice, onBack}) {
 
         {items && items.length > 0 && (
           <>
-            <button
-                type="button"
-                className="btn btn--primary btn--block"
-                onClick={() => onPractice(items.length)}>
-              {`重练错题（${items.length} 题）`}
-            </button>
             <ul className="mistake-list">
               {items.map((item) => (
                 <li key={item.id} className="card mistake-item">
@@ -67,6 +71,11 @@ export default function Mistakes({onPractice, onBack}) {
                     <span className="badge badge--danger">
                       {`错 ${item.wrongCount} 次`}
                     </span>
+                    {item.correctStreak > 0 && (
+                      <span className="badge badge--good">
+                        {`答对 ${item.correctStreak}/2`}
+                      </span>
+                    )}
                   </div>
                   <p className="mistake-item__stem">{item.stem}</p>
                   <button

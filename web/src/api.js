@@ -49,12 +49,14 @@ export const api = {
    * 开始一轮刷题。
    * @param {number} count 题目数量。
    * @param {string} mode 'practice' 常规（错题优先）| 'mistakes' 只练错题。
+   * @param {Array<number>} exclude 本轮已出过的题目 id（无限模式不重复）。
    * @return {Promise<Object>} {questions: Array}。
    */
-  practice: async (count, mode) => ({
+  practice: async (count, mode, exclude = []) => ({
     questions: await rpc('practice_questions', {
       p_count: count,
       p_mode: mode,
+      p_exclude: exclude,
     }),
   }),
 

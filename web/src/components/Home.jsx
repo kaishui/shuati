@@ -2,7 +2,13 @@ import {useEffect, useState} from 'react';
 
 import {api} from '../api.js';
 
-const ROUND_SIZES = [10, 20, 50];
+/** 刷题轮次选项：固定题数 + 无限模式（本轮不重复）。 */
+const ROUND_MODES = [
+  {key: '10', label: '10 题', count: 10},
+  {key: '20', label: '20 题', count: 20},
+  {key: '50', label: '50 题', count: 50},
+  {key: 'endless', label: '无限', count: 10, endless: true},
+];
 
 /** 统计卡片：数值 + 标签。 */
 function StatCard({value, label, accent}) {
@@ -17,7 +23,7 @@ function StatCard({value, label, accent}) {
 /** 首页：统计概览 + 模式入口。 */
 export default function Home({onPractice, onMistakes}) {
   const [stats, setStats] = useState(null);
-  const [count, setCount] = useState(ROUND_SIZES[0]);
+  const [modeKey, setModeKey] = useState(ROUND_MODES[0].key);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -52,23 +58,30 @@ export default function Home({onPractice, onMistakes}) {
         <section className="card">
           <h2 className="card__title">开始刷题</h2>
           <p className="card__hint">
-            点击选项直接作答；答错的题会重新排队再次出现，并进入错题集。
+            点击选项直接作答，答对自动跳下一题；答错的题会重新排队
+            再次出现，隔天答对两次后移出错题集。
           </p>
           <div className="chip-row">
-            {ROUND_SIZES.map((size) => (
+            {ROUND_MODES.map((option) => (
               <button
-                  key={size}
+                  key={option.key}
                   type="button"
-                  className={`chip${count === size ? ' chip--active' : ''}`}
-                  onClick={() => setCount(size)}>
-                {size} 题
+                  className={`chip${
+                    modeKey === option.key ? ' chip--active' : ''
+                  }`}
+                  onClick={() => setModeKey(option.key)}>
+                {option.label}
               </button>
             ))}
           </div>
           <button
               type="button"
               className="btn btn--primary btn--block"
-              onClick={() => onPractice(count)}>
+              onClick={() => {
+                const option = ROUND_MODES.find(
+                    (item) => item.key === modeKey);
+                onPractice(option.count, option.endless);
+              }}>
             开始刷题
           </button>
         </section>

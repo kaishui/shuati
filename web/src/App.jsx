@@ -13,9 +13,10 @@ export default function App() {
    * @param {number} count 题目数量。
    * @param {string} mode 练习模式。
    * @param {string} back 结束后返回的视图。
+   * @param {boolean} endless 无限刷题模式（本轮不重复）。
    */
-  const startPractice = (count, mode, back) => {
-    setView({name: 'practice', count, mode, back});
+  const startPractice = (count, mode, back, endless = false) => {
+    setView({name: 'practice', count, mode, back, endless});
   };
 
   if (view.name === 'practice') {
@@ -23,6 +24,7 @@ export default function App() {
       <Practice
           count={view.count}
           mode={view.mode}
+          endless={view.endless}
           onExit={() => setView({name: view.back})} />
     );
   }
@@ -37,7 +39,8 @@ export default function App() {
 
   return (
     <Home
-        onPractice={(count) => startPractice(count, 'practice', 'home')}
+        onPractice={(count, endless) =>
+          startPractice(count, 'practice', 'home', endless)}
         onMistakes={() => setView({name: 'mistakes'})} />
   );
 }

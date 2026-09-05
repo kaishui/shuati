@@ -140,6 +140,11 @@ button {
   background: var(--danger-weak);
 }
 
+.badge--good {
+  color: var(--success);
+  background: var(--success-weak);
+}
+
 /* 选项。 */
 .options {
   display: grid;
@@ -409,6 +414,11 @@ button {
   background: var(--success-weak);
 }
 
+.result__note--info {
+  color: var(--muted);
+  background: var(--bg);
+}
+
 .evidence {
   margin: 12px 0;
   padding: 12px;
@@ -507,6 +517,11 @@ button {
 .alert--error {
   color: var(--danger);
   background: var(--danger-weak);
+}
+
+.alert--info {
+  color: var(--muted);
+  background: var(--bg);
 }
 
 /* 宽屏：限宽居中 + 双列选项。 */

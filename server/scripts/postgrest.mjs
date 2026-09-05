@@ -14,13 +14,14 @@ import pool from '../src/db.js';
 
 /** 每条语句单独执行（事务池逐条提交，避免多语句事务语义问题）。 */
 const STATEMENTS = [
-  // ---- 组 A0：清理旧版 public schema 中的函数（历史版本）----
+  // ---- 组 A0：清理旧版 public/api schema 中的旧签名函数 ----
   // 本项目 PostgREST 暴露的是 api schema，函数必须建在 api 下。
   `DROP FUNCTION IF EXISTS public.practice_questions(integer, text);
    DROP FUNCTION IF EXISTS public.submit_answer(bigint, text, text);
    DROP FUNCTION IF EXISTS public.mistake_list();
    DROP FUNCTION IF EXISTS public.resolve_mistake(bigint);
-   DROP FUNCTION IF EXISTS public.stats();`,
+   DROP FUNCTION IF EXISTS public.stats();
+   DROP FUNCTION IF EXISTS api.practice_questions(integer, text);`,
 
   // ---- 组 A：表级安全边界 ----
   // Supabase 默认把三张表的 ALL 授给 anon/authenticated；若不撤销，
@@ -35,11 +36,18 @@ const STATEMENTS = [
    REVOKE ALL ON attempts FROM anon, authenticated;
    REVOKE ALL ON mistakes FROM anon, authenticated;`,
 
+  // ---- 组 A1：错题表加「隔天两次答对」追踪列 ----
+  `ALTER TABLE mistakes
+     ADD COLUMN IF NOT EXISTS correct_streak integer NOT NULL DEFAULT 0;
+   ALTER TABLE mistakes
+     ADD COLUMN IF NOT EXISTS last_correct_date date;`,
+
   // ---- 组 B：出题函数 ----
   // 错题优先（bucket=0），再随机补齐；mode=mistakes 只出错题。
+  // p_exclude 排除已作答题目（无限刷题模式本轮不重复）。
   // 含 random()，声明 VOLATILE；search_path 置空 + 全限定表名防劫持。
   `CREATE OR REPLACE FUNCTION api.practice_questions(
-     p_count int, p_mode text)
+     p_count int, p_mode text, p_exclude bigint[] DEFAULT NULL)
    RETURNS json
    LANGUAGE sql
    SECURITY DEFINER
@@ -64,7 +72,8 @@ const STATEMENTS = [
        FROM public.questions q
        LEFT JOIN public.mistakes m
          ON m.question_id = q.id AND m.resolved = FALSE
-       WHERE p_mode <> 'mistakes' OR m.question_id IS NOT NULL
+       WHERE (p_mode <> 'mistakes' OR m.question_id IS NOT NULL)
+         AND NOT (q.id = ANY(COALESCE(p_exclude, ARRAY[]::bigint[])))
        ORDER BY bucket, random()
        LIMIT LEAST(GREATEST(p_count, 1), 50)
      ) t;
@@ -87,6 +96,9 @@ const STATEMENTS = [
      v_selected_text text;
      v_mistake_updated boolean := FALSE;
      v_mistake_resolved boolean := FALSE;
+     v_mistake_advanced boolean := FALSE;
+     v_streak integer := 0;
+     v_last_date date;
    BEGIN
      IF p_question_id IS NULL THEN
        RAISE EXCEPTION 'questionId 必须为整数' USING ERRCODE = '22023';
@@ -115,7 +127,7 @@ const STATEMENTS = [
      VALUES (p_question_id, p_selected, v_correct);
 
      IF NOT v_correct THEN
-       -- 答错：进入错题集并累计错误次数（错题在后续轮次重复出现）。
+       -- 答错：进入错题集、累计错误次数并清零答对进度。
        INSERT INTO public.mistakes
          (question_id, wrong_count, last_wrong_at, resolved)
        VALUES (p_question_id, 1, now(), FALSE)
@@ -123,14 +135,32 @@ const STATEMENTS = [
          wrong_count = public.mistakes.wrong_count + 1,
          last_wrong_at = now(),
          resolved = FALSE,
-         resolved_at = NULL;
+         resolved_at = NULL,
+         correct_streak = 0,
+         last_correct_date = NULL;
        v_mistake_updated := TRUE;
-     ELSIF p_mode = 'mistakes' THEN
-       -- 错题重练中答对：移出错题集。
-       UPDATE public.mistakes
-       SET resolved = TRUE, resolved_at = now()
-       WHERE question_id = p_question_id AND resolved = FALSE;
-       v_mistake_resolved := FOUND;
+     ELSE
+       -- 答对：需「隔天答对两次」才移出错题集；当天重复答对不计次。
+       SELECT m.correct_streak, m.last_correct_date
+         INTO v_streak, v_last_date
+       FROM public.mistakes m
+       WHERE m.question_id = p_question_id AND m.resolved = FALSE;
+       IF FOUND THEN
+         IF v_last_date IS NULL OR v_last_date < CURRENT_DATE THEN
+           v_streak := v_streak + 1;
+         END IF;
+         IF v_streak >= 2 THEN
+           UPDATE public.mistakes
+           SET resolved = TRUE, resolved_at = now()
+           WHERE question_id = p_question_id AND resolved = FALSE;
+           v_mistake_resolved := TRUE;
+         ELSE
+           UPDATE public.mistakes
+           SET correct_streak = v_streak, last_correct_date = CURRENT_DATE
+           WHERE question_id = p_question_id AND resolved = FALSE;
+           v_mistake_advanced := TRUE;
+         END IF;
+       END IF;
      END IF;
 
      RETURN json_build_object(
@@ -142,7 +172,9 @@ const STATEMENTS = [
        'stem', v_question.stem,
        'sourceNo', v_question.source_no,
        'mistakeUpdated', v_mistake_updated,
-       'mistakeResolved', v_mistake_resolved
+       'mistakeResolved', v_mistake_resolved,
+       'mistakeAdvanced', v_mistake_advanced,
+       'correctStreak', v_streak
      );
    END;
    $$;`,
@@ -167,7 +199,8 @@ const STATEMENTS = [
            'stem', q.stem,
            'options', q.options,
            'wrongCount', m.wrong_count,
-           'lastWrongAt', m.last_wrong_at
+           'lastWrongAt', m.last_wrong_at,
+           'correctStreak', m.correct_streak
          ) AS question,
          m.last_wrong_at AS last_wrong
        FROM public.mistakes m
@@ -211,7 +244,7 @@ const STATEMENTS = [
    $$;`,
 
   // ---- 组 E：函数执行权限 + 刷新 PostgREST schema 缓存 ----
-  `GRANT EXECUTE ON FUNCTION api.practice_questions(integer, text)
+  `GRANT EXECUTE ON FUNCTION api.practice_questions(integer, text, bigint[])
      TO anon, authenticated;
    GRANT EXECUTE ON FUNCTION api.submit_answer(bigint, text, text)
      TO anon, authenticated;
