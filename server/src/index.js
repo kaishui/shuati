@@ -8,10 +8,13 @@ const port = Number(process.env.PORT ?? 3001);
 app.use(express.json());
 
 // 允许 GitHub Pages 静态站点跨域调用本机后端（含 OPTIONS 预检）。
+// Access-Control-Allow-Private-Network 用于放行 Chrome 的
+// Private Network Access 拦截（公网 HTTPS 页面 → 本机 localhost）。
 app.use((req, res, next) => {
   res.set('Access-Control-Allow-Origin', '*');
   res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.set('Access-Control-Allow-Headers', 'Content-Type');
+  res.set('Access-Control-Allow-Private-Network', 'true');
   if (req.method === 'OPTIONS') {
     res.sendStatus(204);
     return;

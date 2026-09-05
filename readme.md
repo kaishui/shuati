@@ -37,6 +37,26 @@ npm run lint         # 两个包同时跑 eslint（Google 风格）
 npm run build -w web # 前端生产构建
 ```
 
+## 部署（GitHub Pages）
+
+推送到 main 后，GitHub Actions 自动把前端构建并发布到
+https://kaishui.github.io/shuati/ （构建时注入
+`VITE_BASE=/shuati/` 与 `VITE_API_BASE=http://localhost:3002`）。
+
+使用线上页面的步骤：
+
+1. 本机保持后端运行：`npm run dev:server`
+2. 打开 https://kaishui.github.io/shuati/
+3. 首次访问浏览器会弹出「访问本地网络」权限询问（Chrome 138+
+   的 Local Network Access 机制），选择**允许**
+
+限制说明：
+
+- 线上静态页通过 `http://localhost:3002` 调用后端，只在与后端
+  同一台电脑上可用；手机访问需要把后端部署到公网
+- Supabase（ap-southeast-2）跨境冷连接约 4 秒，页面首次加载稍慢，
+  之后走连接池恢复正常
+
 ## 目录结构
 
 ```

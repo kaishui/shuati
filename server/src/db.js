@@ -1,10 +1,17 @@
 import {Pool} from 'pg';
 
-/** 全局 PostgreSQL 连接池（Supabase 事务池需要 SSL）。 */
+/**
+ * 全局 PostgreSQL 连接池（Supabase 事务池需要 SSL）。
+ *
+ * 跨境到 Supabase 的冷连接约需 4s，设置超时避免死连接让请求永久挂起。
+ */
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: {rejectUnauthorized: false},
   max: 10,
+  connectionTimeoutMillis: 15000,
+  query_timeout: 15000,
+  idleTimeoutMillis: 10000,
 });
 
 /** 建表语句：questions 题库、attempts 作答记录、mistakes 错题集。 */
