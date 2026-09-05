@@ -51,7 +51,9 @@ export default function Home({onPractice, onMistakes}) {
 
         <section className="card">
           <h2 className="card__title">开始刷题</h2>
-          <p className="card__hint">答错的题会重新排队再次出现，并进入错题集。</p>
+          <p className="card__hint">
+            点击选项直接作答；答错的题会重新排队再次出现，并进入错题集。
+          </p>
           <div className="chip-row">
             {ROUND_SIZES.map((size) => (
               <button

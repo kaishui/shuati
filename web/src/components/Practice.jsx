@@ -54,6 +54,7 @@ export default function Practice({count, mode, onExit}) {
   const [selected, setSelected] = useState('');
   const [result, setResult] = useState(null);
   const [phase, setPhase] = useState('loading');
+  const [submitting, setSubmitting] = useState(false);
   const [roundStats, setRoundStats] = useState({correct: 0, wrong: 0});
   const [error, setError] = useState('');
 
@@ -88,11 +89,19 @@ export default function Practice({count, mode, onExit}) {
     setRound((prev) => prev + 1);
   };
 
-  /** 提交答案；答错的题重新排到队尾，稍后再次出现。 */
-  const submit = async () => {
-    if (!selected || !current) return;
+  /**
+   * 点击选项：选中并立即提交。
+   * 答错的题重新排到队尾，稍后再次出现。
+   * @param {string} key 选项字母。
+   */
+  const choose = async (key) => {
+    if (phase !== 'answering' || submitting || !current) return;
+    setSelected(key);
+    setSubmitting(true);
     try {
-      const res = await api.answer({questionId: current.id, selected, mode});
+      const res = await api.answer({
+        questionId: current.id, selected: key, mode,
+      });
       setResult(res);
       setPhase('result');
       setRoundStats((prev) => ({
@@ -103,7 +112,10 @@ export default function Practice({count, mode, onExit}) {
         setQueue((prev) => [...prev, {...current, requeued: true}]);
       }
     } catch (err) {
+      // 提交失败保持作答态，可重新点选重试。
       setError(err.message);
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -196,6 +208,7 @@ export default function Practice({count, mode, onExit}) {
                 )}
               </div>
               <h2 className="stem">{current.stem}</h2>
+              <p className="card__hint">点击选项即提交答案</p>
             </section>
 
             <section className="options">
@@ -204,8 +217,8 @@ export default function Practice({count, mode, onExit}) {
                     key={option.key}
                     type="button"
                     className={optionClass(option)}
-                    disabled={phase !== 'answering'}
-                    onClick={() => setSelected(option.key)}>
+                    disabled={phase !== 'answering' || submitting}
+                    onClick={() => choose(option.key)}>
                   <span className="option__key">{option.key}</span>
                   <span className="option__text">{option.text}</span>
                 </button>
@@ -218,18 +231,6 @@ export default function Practice({count, mode, onExit}) {
           </>
         )}
       </main>
-
-      {phase === 'answering' && (
-        <div className="action-bar">
-          <button
-              type="button"
-              className="btn btn--primary btn--block"
-              disabled={!selected}
-              onClick={submit}>
-            提交答案
-          </button>
-        </div>
-      )}
     </div>
   );
 }
