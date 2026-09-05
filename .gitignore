@@ -1,0 +1,5 @@
+node_modules/
+web/dist/
+server/.env
+doc/试题.txt
+.DS_Store
