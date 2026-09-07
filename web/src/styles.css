@@ -309,6 +309,25 @@ button {
   background: var(--danger-weak);
 }
 
+.stat-card--link {
+  cursor: pointer;
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.stat-card--link:active {
+  transform: scale(0.96);
+}
+
+.stat-card--link:hover {
+  box-shadow: 0 0 0 2px var(--danger) inset;
+}
+
+.stat-card--link:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
 .stat-card__value {
   font-size: 20px;
   font-weight: 700;

@@ -10,10 +10,16 @@ const ROUND_MODES = [
   {key: 'endless', label: '无限', count: 10, endless: true},
 ];
 
-/** 统计卡片：数值 + 标签。 */
-function StatCard({value, label, accent}) {
+/** 统计卡片：数值 + 标签；可选点击跳转到对应题库。 */
+function StatCard({value, label, accent, onClick}) {
+  const clickable = Boolean(onClick);
+  const props = clickable ?
+      {onClick, role: 'button', tabIndex: 0} : {};
   return (
-    <div className={`stat-card${accent ? ' stat-card--accent' : ''}`}>
+    <div
+        className={`stat-card${accent ? ' stat-card--accent' : ''}${
+          clickable ? ' stat-card--link' : ''}`}
+        {...props}>
       <div className="stat-card__value">{value}</div>
       <div className="stat-card__label">{label}</div>
     </div>
@@ -51,8 +57,11 @@ export default function Home({onPractice, onMistakes}) {
             <StatCard value={stats?.attempts ?? '-'} label="累计作答" />
             <StatCard value={stats?.mastered ?? '-'} label="已掌握" />
             <StatCard value={stats?.mistakes ?? '-'} label="待练错题"
-                accent />
+                accent onClick={onMistakes} />
           </div>
+          <p className="card__hint" style={{marginTop: 12}}>
+            点击「待练错题」数字进入错题集。
+          </p>
         </section>
 
         <section className="card">
