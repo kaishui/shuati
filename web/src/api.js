@@ -84,4 +84,13 @@ export const api = {
   resolveMistake: (id) => rpc('resolve_mistake', {
     p_question_id: id,
   }),
+
+  /**
+   * 「斩」掉一道题：标记为不再出现，并移出错题集。
+   * @param {number} id 题目 id。
+   * @return {Promise<Object>} {slain: boolean}。
+   */
+  slay: (id) => rpc('slay_question', {
+    p_question_id: id,
+  }),
 };

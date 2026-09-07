@@ -33,7 +33,7 @@ function toQuestion(row) {
 }
 
 /**
- * 随机抽取 count 道未解决的错题（带错误次数）。
+ * 随机抽取 count 道未解决的错题（带错误次数），排除已斩的题。
  * @param {number} count 数量。
  * @return {Promise<Array<Object>>} 题目行数组。
  */
@@ -42,45 +42,89 @@ async function pickMistakes(count) {
     SELECT q.id, q.source_no, q.stem, q.options, m.wrong_count
     FROM questions q
     JOIN mistakes m ON m.question_id = q.id AND m.resolved = FALSE
+    LEFT JOIN progress p ON p.question_id = q.id
+    WHERE NOT (p.question_id IS NOT NULL AND p.slain)
     ORDER BY random()
     LIMIT $1`, [count]);
   return rows;
 }
 
 /**
- * 随机抽取 count 道不在排除列表中的题目。
+ * 随机抽取 count 道「新题」（未掌握、非错题、未斩、不在排除列表）。
  * @param {number} count 数量。
  * @param {Array<number>} exclude 已选题目 id。
  * @return {Promise<Array<Object>>} 题目行数组。
  */
-async function pickOthers(count, exclude) {
+async function pickFresh(count, exclude) {
   const {rows} = await pool.query(`
     SELECT q.id, q.source_no, q.stem, q.options
     FROM questions q
-    WHERE NOT (q.id = ANY($1::bigint[]))
+    LEFT JOIN progress p ON p.question_id = q.id
+    WHERE NOT (p.question_id IS NOT NULL AND p.slain)
+      AND NOT (p.question_id IS NOT NULL AND p.mastered)
+      AND NOT EXISTS (
+        SELECT 1 FROM mistakes m
+        WHERE m.question_id = q.id AND m.resolved = FALSE)
+      AND NOT (q.id = ANY($1::bigint[]))
     ORDER BY random()
     LIMIT $2`, [exclude, count]);
   return rows;
 }
 
-/** 出题接口：错题优先，再随机补齐；mode=mistakes 时只出错题。 */
+/**
+ * 随机抽取 count 道「已掌握」题（仅在题目不足时补齐，减少会的题）。
+ * @param {number} count 数量。
+ * @param {Array<number>} exclude 已选题目 id。
+ * @return {Promise<Array<Object>>} 题目行数组。
+ */
+async function pickMastered(count, exclude) {
+  const {rows} = await pool.query(`
+    SELECT q.id, q.source_no, q.stem, q.options
+    FROM questions q
+    JOIN progress p ON p.question_id = q.id AND p.mastered
+    WHERE NOT (p.slain)
+      AND NOT EXISTS (
+        SELECT 1 FROM mistakes m
+        WHERE m.question_id = q.id AND m.resolved = FALSE)
+      AND NOT (q.id = ANY($1::bigint[]))
+    ORDER BY random()
+    LIMIT $2`, [exclude, count]);
+  return rows;
+}
+
+/** 出题接口：新题优先 + 混入最多 5 道错题；mode=mistakes 只出错题。 */
 router.post('/practice', async (req, res) => {
   const count = clampCount(req.body?.count);
   const mistakesOnly = req.body?.mode === 'mistakes';
 
-  const mistakeRows = await pickMistakes(count);
-  let regularRows = [];
-  if (!mistakesOnly) {
+  let mistakeRows = [];
+  let freshRows = [];
+  let masteredRows = [];
+
+  if (mistakesOnly) {
+    mistakeRows = await pickMistakes(count);
+  } else {
+    // 错题最多 5 道动态抽取，其余用新题补齐，不足再补已掌握的题。
+    mistakeRows = await pickMistakes(Math.min(5, count));
+    const exclude = mistakeRows.map((row) => row.id);
     const rest = count - mistakeRows.length;
     if (rest > 0) {
-      regularRows = await pickOthers(
-          rest, mistakeRows.map((row) => row.id));
+      freshRows = await pickFresh(rest, exclude);
+      exclude.push(...freshRows.map((row) => row.id));
+      const stillRest = rest - freshRows.length;
+      if (stillRest > 0) {
+        masteredRows = await pickMastered(stillRest, exclude);
+      }
     }
   }
 
-  const questions = [...mistakeRows, ...regularRows].map((row) => ({
+  const questions = [
+    ...mistakeRows.map((row) => ({...row, bucket: 0})),
+    ...freshRows.map((row) => ({...row, bucket: 1})),
+    ...masteredRows.map((row) => ({...row, bucket: 2})),
+  ].sort((a, b) => a.bucket - b.bucket).map((row) => ({
     ...toQuestion(row),
-    wrongCount: row.wrong_count,
+    wrongCount: row.wrong_count ?? 0,
   }));
   res.json({questions});
 });
@@ -128,12 +172,21 @@ router.post('/answers', async (req, res) => {
           resolved = FALSE,
           resolved_at = NULL`, [questionId]);
       mistakeUpdated = true;
-    } else if (mode === 'mistakes') {
-      // 错题重练中答对：移出错题集。
-      const {rowCount} = await client.query(`
-        UPDATE mistakes SET resolved = TRUE, resolved_at = now()
-        WHERE question_id = $1 AND resolved = FALSE`, [questionId]);
-      mistakeResolved = rowCount > 0;
+    } else {
+      // 答对：记录为「已掌握」，常规刷题减少出现。
+      await client.query(`
+        INSERT INTO progress (question_id, mastered, mastered_at)
+        VALUES ($1, TRUE, now())
+        ON CONFLICT (question_id) DO UPDATE SET
+          mastered = TRUE, mastered_at = now()`, [questionId]);
+
+      if (mode === 'mistakes') {
+        // 错题重练中答对：移出错题集。
+        const {rowCount} = await client.query(`
+          UPDATE mistakes SET resolved = TRUE, resolved_at = now()
+          WHERE question_id = $1 AND resolved = FALSE`, [questionId]);
+        mistakeResolved = rowCount > 0;
+      }
     }
     await client.query('COMMIT');
 
@@ -162,14 +215,16 @@ router.post('/answers', async (req, res) => {
   }
 });
 
-/** 错题集：列出未解决的错题，按最近答错时间倒序。 */
+/** 错题集：列出未解决的错题，按最近答错时间倒序，排除已斩。 */
 router.get('/mistakes', async (req, res) => {
   const {rows} = await pool.query(`
     SELECT q.id, q.source_no, q.stem, q.options,
            m.wrong_count, m.last_wrong_at
     FROM mistakes m
     JOIN questions q ON q.id = m.question_id
+    LEFT JOIN progress p ON p.question_id = q.id
     WHERE m.resolved = FALSE
+      AND NOT (p.question_id IS NOT NULL AND p.slain)
     ORDER BY m.last_wrong_at DESC`);
   res.json({
     questions: rows.map((row) => ({
@@ -193,22 +248,47 @@ router.post('/mistakes/:id/resolve', async (req, res) => {
   res.json({resolved: rowCount > 0});
 });
 
-/** 统计：题库总量、作答次数、答对次数、未解决错题数。 */
+/** 斩掉一道题：标记为不再出现，并同步移出错题集。 */
+router.post('/questions/:id/slay', async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    res.status(400).json({error: 'id 必须为整数'});
+    return;
+  }
+  await pool.query(`
+    INSERT INTO progress (question_id, slain, slain_at)
+    VALUES ($1, TRUE, now())
+    ON CONFLICT (question_id) DO UPDATE SET
+      slain = TRUE, slain_at = now()`, [id]);
+  await pool.query(`
+    UPDATE mistakes SET resolved = TRUE, resolved_at = now()
+    WHERE question_id = $1 AND resolved = FALSE`, [id]);
+  res.json({slain: true});
+});
+
+/** 统计：题库总量、作答次数、答对次数、未解决错题数、已掌握、已斩。 */
 router.get('/stats', async (req, res) => {
-  const [questionRows, attemptRows, mistakeRows] = await Promise.all([
-    pool.query('SELECT count(*)::int AS n FROM questions'),
-    pool.query(`
-      SELECT count(*)::int AS n,
-             count(*) FILTER (WHERE is_correct)::int AS correct
-      FROM attempts`),
-    pool.query(`
-      SELECT count(*)::int AS n FROM mistakes WHERE resolved = FALSE`),
-  ]);
+  const [questionRows, attemptRows, mistakeRows, progressRows] =
+    await Promise.all([
+      pool.query('SELECT count(*)::int AS n FROM questions'),
+      pool.query(`
+        SELECT count(*)::int AS n,
+               count(*) FILTER (WHERE is_correct)::int AS correct
+        FROM attempts`),
+      pool.query(`
+        SELECT count(*)::int AS n FROM mistakes WHERE resolved = FALSE`),
+      pool.query(`
+        SELECT count(*) FILTER (WHERE mastered)::int AS mastered,
+               count(*) FILTER (WHERE slain)::int AS slain
+        FROM progress`),
+    ]);
   res.json({
     questions: questionRows.rows[0].n,
     attempts: attemptRows.rows[0].n,
     correct: attemptRows.rows[0].correct,
     mistakes: mistakeRows.rows[0].n,
+    mastered: progressRows.rows[0].mastered,
+    slain: progressRows.rows[0].slain,
   });
 });
 

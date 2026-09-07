@@ -49,7 +49,7 @@ export default function Home({onPractice, onMistakes}) {
           <div className="stats-grid">
             <StatCard value={stats?.questions ?? '-'} label="题库总量" />
             <StatCard value={stats?.attempts ?? '-'} label="累计作答" />
-            <StatCard value={stats?.correct ?? '-'} label="累计答对" />
+            <StatCard value={stats?.mastered ?? '-'} label="已掌握" />
             <StatCard value={stats?.mistakes ?? '-'} label="待练错题"
                 accent />
           </div>
@@ -58,8 +58,9 @@ export default function Home({onPractice, onMistakes}) {
         <section className="card">
           <h2 className="card__title">开始刷题</h2>
           <p className="card__hint">
-            点击选项直接作答，答对自动跳下一题；答错的题会重新排队
-            再次出现，隔天答对两次后移出错题集。
+            新题优先；每轮自动混入最多 5 道错题巩固。答对的题记入
+            「已掌握」，之后减少出现；不想要的题可到错题集「斩」掉，
+            斩过的题不再出现。
           </p>
           <div className="chip-row">
             {ROUND_MODES.map((option) => (

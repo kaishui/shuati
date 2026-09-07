@@ -3,8 +3,9 @@ import {useState} from 'react';
 import Home from './components/Home.jsx';
 import Mistakes from './components/Mistakes.jsx';
 import Practice from './components/Practice.jsx';
+import SinglePractice from './components/SinglePractice.jsx';
 
-/** 应用根组件：在首页、刷题、错题集三个视图间切换。 */
+/** 应用根组件：在首页、刷题、错题集、单题练习四个视图间切换。 */
 export default function App() {
   const [view, setView] = useState({name: 'home'});
 
@@ -29,10 +30,20 @@ export default function App() {
     );
   }
 
+  if (view.name === 'single') {
+    return (
+      <SinglePractice
+          question={view.question}
+          onDone={() => setView({name: 'mistakes'})}
+          onExit={() => setView({name: 'mistakes'})} />
+    );
+  }
+
   if (view.name === 'mistakes') {
     return (
       <Mistakes
           onPractice={(count) => startPractice(count, 'mistakes', 'mistakes')}
+          onSingle={(question) => setView({name: 'single', question})}
           onBack={() => setView({name: 'home'})} />
     );
   }

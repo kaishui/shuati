@@ -42,6 +42,14 @@ const SCHEMA_SQL = `
     resolved BOOLEAN NOT NULL DEFAULT FALSE,
     resolved_at TIMESTAMPTZ
   );
+
+  CREATE TABLE IF NOT EXISTS progress (
+    question_id BIGINT PRIMARY KEY REFERENCES questions(id) ON DELETE CASCADE,
+    mastered BOOLEAN NOT NULL DEFAULT FALSE,
+    mastered_at TIMESTAMPTZ,
+    slain BOOLEAN NOT NULL DEFAULT FALSE,
+    slain_at TIMESTAMPTZ
+  );
 `;
 
 /** 初始化表结构（幂等）。 */

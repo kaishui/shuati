@@ -39,7 +39,7 @@ function SummaryPanel({stats, onRestart, onExit}) {
         </div>
       </div>
       <p className="summary__hint">
-        答错的题已进入错题集，下次刷题会优先出现。
+        答错的题已进入错题集，之后每轮会动态抽取巩固。
       </p>
       <div className="summary__actions">
         <button type="button" className="btn btn--primary btn--block"
@@ -313,8 +313,7 @@ export default function Practice({count, mode, endless, onExit}) {
                       '点击选项即提交，答对自动下一题，本轮不重复' :
                       '点击选项即提交答案，答对自动跳下一题'}
                 </p>
-              )}
-            </section>
+              )}            </section>
 
             <section className="options">
               {displayQuestion.options.map((option) => (

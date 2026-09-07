@@ -2,12 +2,12 @@ import {useEffect, useState} from 'react';
 
 import {api} from '../api.js';
 
-/** 错题集：未解决的错题列表，可重练或手动移出。 */
-export default function Mistakes({onPractice, onBack}) {
+/** 错题集：未解决的错题列表，可点击重做、重练或手动移出/斩掉。 */
+export default function Mistakes({onPractice, onSingle, onBack}) {
   const [items, setItems] = useState(null);
   const [error, setError] = useState('');
 
-  useEffect(() => {
+  const load = () => {
     let cancelled = false;
     api.mistakes()
         .then((data) => !cancelled && setItems(data.questions))
@@ -15,11 +15,21 @@ export default function Mistakes({onPractice, onBack}) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  };
+
+  useEffect(load, []);
 
   /** 手动移出错题集（「我会了」）。 */
   const remove = (id) => {
     api.resolveMistake(id)
+        .then(() => setItems((prev) =>
+          prev.filter((question) => question.id !== id)))
+        .catch((err) => setError(err.message));
+  };
+
+  /** 「斩」掉本题：不再出现并移出错题集。 */
+  const slay = (id) => {
+    api.slay(id)
         .then(() => setItems((prev) =>
           prev.filter((question) => question.id !== id)))
         .catch((err) => setError(err.message));
@@ -63,27 +73,43 @@ export default function Mistakes({onPractice, onBack}) {
 
         {items && items.length > 0 && (
           <>
+            <p className="card__hint" style={{marginTop: 12}}>
+              点击题目可重做一次，答对即移出错题集。
+            </p>
             <ul className="mistake-list">
               {items.map((item) => (
                 <li key={item.id} className="card mistake-item">
-                  <div className="question-meta">
-                    <span className="badge">{`第${item.sourceNo}题`}</span>
-                    <span className="badge badge--danger">
-                      {`错 ${item.wrongCount} 次`}
-                    </span>
-                    {item.correctStreak > 0 && (
-                      <span className="badge badge--good">
-                        {`答对 ${item.correctStreak}/2`}
-                      </span>
-                    )}
-                  </div>
-                  <p className="mistake-item__stem">{item.stem}</p>
                   <button
                       type="button"
-                      className="btn btn--ghost btn--small"
-                      onClick={() => remove(item.id)}>
-                    我会了，移出错题集
+                      className="mistake-item__main"
+                      onClick={() => onSingle(item)}>
+                    <div className="question-meta">
+                      <span className="badge">{`第${item.sourceNo}题`}</span>
+                      <span className="badge badge--danger">
+                        {`错 ${item.wrongCount} 次`}
+                      </span>
+                      {item.correctStreak > 0 && (
+                        <span className="badge badge--good">
+                          {`答对 ${item.correctStreak}/2`}
+                        </span>
+                      )}
+                    </div>
+                    <p className="mistake-item__stem">{item.stem}</p>
                   </button>
+                  <div className="mistake-item__actions">
+                    <button
+                        type="button"
+                        className="btn btn--ghost btn--small"
+                        onClick={() => remove(item.id)}>
+                      我会了，移出
+                    </button>
+                    <button
+                        type="button"
+                        className="btn btn--ghost btn--small btn--danger"
+                        onClick={() => slay(item.id)}>
+                      斩
+                    </button>
+                  </div>
                 </li>
               ))}
             </ul>
