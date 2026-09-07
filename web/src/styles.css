@@ -368,6 +368,17 @@ button {
   border-color: var(--primary);
 }
 
+/* 并排按钮（错题集历史入口等）。 */
+.btn-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.btn-row .btn {
+  flex: 1;
+}
+
 /* 结果面板与证据。 */
 .result {
   margin-top: 4px;

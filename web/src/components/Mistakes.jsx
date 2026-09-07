@@ -3,7 +3,7 @@ import {useEffect, useState} from 'react';
 import {api} from '../api.js';
 
 /** 错题集：未解决的错题列表，可点击重做、重练或手动移出/斩掉。 */
-export default function Mistakes({onPractice, onSingle, onBack}) {
+export default function Mistakes({onPractice, onSingle, onHistory, onBack}) {
   const [items, setItems] = useState(null);
   const [error, setError] = useState('');
 
@@ -57,6 +57,22 @@ export default function Mistakes({onPractice, onSingle, onBack}) {
             {items ? `重练错题（${items.length} 题）` : '重练错题'}
           </button>
         )}
+
+        {/* 历史入口：已斩 / 已掌握。 */}
+        <div className="btn-row">
+          <button
+              type="button"
+              className="btn btn--ghost"
+              onClick={() => onHistory('mastered')}>
+            已掌握
+          </button>
+          <button
+              type="button"
+              className="btn btn--ghost"
+              onClick={() => onHistory('slain')}>
+            斩历史
+          </button>
+        </div>
 
         {!items && !error && (
           <div className="empty">

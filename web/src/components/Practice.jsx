@@ -75,6 +75,9 @@ export default function Practice({count, mode, endless, onExit}) {
   const autoNextTimer = useRef(null);
   const toppingUp = useRef(false);
 
+  // 考试模式：固定题数、全部随机、答错不重排（同无限模式）。
+  const noRequeue = endless || mode === 'exam';
+
   // 卸载时清理自动跳题定时器。
   useEffect(() => () => clearTimeout(autoNextTimer.current), []);
 
@@ -180,7 +183,7 @@ export default function Practice({count, mode, endless, onExit}) {
         wrong: prev.wrong + (res.correct ? 0 : 1),
       }));
       if (!res.correct) {
-        if (!endless) {
+        if (!noRequeue) {
           setQueue((prev) => [...prev, {...current, requeued: true}]);
         }
       } else {
@@ -262,7 +265,8 @@ export default function Practice({count, mode, endless, onExit}) {
         <h1 className="topbar__title">
           {mode === 'mistakes' ?
               '错题重练' :
-              (endless ? '无限刷题' : '刷题模式')}
+              (mode === 'exam' ? '考试模式' :
+                  (endless ? '无限刷题' : '刷题模式'))}
         </h1>
         <div className="topbar__right">
           {`对 ${roundStats.correct} · 错 ${roundStats.wrong}`}
@@ -311,9 +315,12 @@ export default function Practice({count, mode, endless, onExit}) {
                 <p className="card__hint">
                   {endless ?
                       '点击选项即提交，答对自动下一题，本轮不重复' :
-                      '点击选项即提交答案，答对自动跳下一题'}
+                      (mode === 'exam' ?
+                          '考试模式：全部随机，答对自动下一题' :
+                          '点击选项即提交答案，答对自动跳下一题')}
                 </p>
-              )}            </section>
+              )}
+            </section>
 
             <section className="options">
               {displayQuestion.options.map((option) => (

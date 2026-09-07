@@ -49,13 +49,20 @@ const STATEMENTS = [
      mastered_at TIMESTAMPTZ,
      slain BOOLEAN NOT NULL DEFAULT FALSE,
      slain_at TIMESTAMPTZ
-   );`,
+   );
+   CREATE INDEX IF NOT EXISTS progress_mastered_idx
+     ON progress (mastered_at DESC) WHERE mastered;
+   CREATE INDEX IF NOT EXISTS progress_slain_idx
+     ON progress (slain_at DESC) WHERE slain;`,
 
   // ---- 组 B：出题函数 ----
-  // 新题优先，混入最多 5 道未解决的错题（动态抽取）；
-  // 排除已「斩」的题；已「掌握」的题仅在题目不足时补齐（减少会的题）。
-  // mode=mistakes 只出未解决错题。
-  // p_exclude 排除已作答题目（无限刷题模式本轮不重复）。
+  // 各模式出题规则：
+  //   practice（常规）：新题优先，混入最多 5 道未解决错题；已掌握题仅
+  //     在题目不足时补齐；排除已斩。
+  //   mistakes：只出未解决错题；排除已斩。
+  //   endless（无限）：全部随机，排除已掌握题与已斩题（本轮不重复）。
+  //   exam（考试）：全部随机，排除已斩题（含已掌握题，考全部）。
+  // p_exclude 排除已作答题目（无限/考试本轮不重复）。
   // 含 random()，声明 VOLATILE；search_path 置空 + 全限定表名防劫持。
   `CREATE OR REPLACE FUNCTION api.practice_questions(
      p_count int, p_mode text, p_exclude bigint[] DEFAULT NULL)
@@ -87,30 +94,43 @@ const STATEMENTS = [
          AND (p_mode <> 'mistakes' OR m.question_id IS NOT NULL)
          AND NOT (q.id = ANY(COALESCE(p_exclude, ARRAY[]::bigint[])))
      ),
+     -- 随机池：endless（排除已掌握）与 exam（含已掌握）全随机抽取。
+     random_pool AS (
+       SELECT * FROM candidate
+       WHERE p_mode IN ('endless', 'exam')
+         AND (p_mode = 'exam' OR bucket <> 2)
+       ORDER BY random()
+       LIMIT LEAST(GREATEST(p_count, 1), 100)
+     ),
      -- 错题池：常规模式最多抽 5 道；mistakes 模式抽满 p_count。
      mistake_pool AS (
        SELECT * FROM candidate
        WHERE bucket = 0
+         AND p_mode NOT IN ('endless', 'exam')
        ORDER BY random()
        LIMIT CASE WHEN p_mode = 'mistakes'
-                  THEN LEAST(GREATEST(p_count, 1), 50)
+                  THEN LEAST(GREATEST(p_count, 1), 100)
                   ELSE 5 END
      ),
      -- 新题池（未掌握、非错题）。
      fresh_pool AS (
        SELECT * FROM candidate
        WHERE bucket = 1
+         AND p_mode NOT IN ('endless', 'exam')
        ORDER BY random()
-       LIMIT LEAST(GREATEST(p_count, 1), 50)
+       LIMIT LEAST(GREATEST(p_count, 1), 100)
      ),
      -- 已掌握题池：仅在错题+新题不足时补齐。
      mastered_pool AS (
        SELECT * FROM candidate
        WHERE bucket = 2
+         AND p_mode NOT IN ('endless', 'exam')
        ORDER BY random()
-       LIMIT LEAST(GREATEST(p_count, 1), 50)
+       LIMIT LEAST(GREATEST(p_count, 1), 100)
      ),
      combined AS (
+       SELECT * FROM random_pool
+       UNION ALL
        SELECT * FROM mistake_pool
        UNION ALL
        SELECT * FROM fresh_pool
@@ -118,10 +138,13 @@ const STATEMENTS = [
        SELECT * FROM mastered_pool
      ),
      -- 先按优先级排序并截断到目标题数，再聚合。
+     -- endless/exam 全随机不按 bucket 排序；常规模式错题优先。
      limited AS (
        SELECT * FROM combined
-       ORDER BY bucket, random()
-       LIMIT LEAST(GREATEST(p_count, 1), 50)
+       ORDER BY
+         CASE WHEN p_mode IN ('endless', 'exam') THEN 0 ELSE bucket END,
+         random()
+       LIMIT LEAST(GREATEST(p_count, 1), 100)
      )
      SELECT COALESCE(
        json_agg(
@@ -295,6 +318,63 @@ const STATEMENTS = [
    END;
    $$;`,
 
+  // ---- 组 D2：已斩 / 已掌握历史列表 ----
+  `CREATE OR REPLACE FUNCTION api.slain_list()
+   RETURNS json
+   LANGUAGE sql
+   SECURITY DEFINER
+   SET search_path = ''
+   STABLE
+   AS $$
+     SELECT COALESCE(
+       json_agg(x.question ORDER BY x.slain_at DESC),
+       '[]'::json
+     )
+     FROM (
+       SELECT
+         json_build_object(
+           'id', q.id,
+           'sourceNo', q.source_no,
+           'stem', q.stem,
+           'slainAt', p.slain_at
+         ) AS question,
+         p.slain_at
+       FROM public.progress p
+       JOIN public.questions q ON q.id = p.question_id
+       WHERE p.slain
+       ORDER BY p.slain_at DESC
+       LIMIT 200
+     ) x;
+   $$;`,
+
+  `CREATE OR REPLACE FUNCTION api.mastered_list()
+   RETURNS json
+   LANGUAGE sql
+   SECURITY DEFINER
+   SET search_path = ''
+   STABLE
+   AS $$
+     SELECT COALESCE(
+       json_agg(x.question ORDER BY x.mastered_at DESC),
+       '[]'::json
+     )
+     FROM (
+       SELECT
+         json_build_object(
+           'id', q.id,
+           'sourceNo', q.source_no,
+           'stem', q.stem,
+           'masteredAt', p.mastered_at
+         ) AS question,
+         p.mastered_at
+       FROM public.progress p
+       JOIN public.questions q ON q.id = p.question_id
+       WHERE p.mastered
+       ORDER BY p.mastered_at DESC
+       LIMIT 200
+     ) x;
+   $$;`,
+
   // 斩掉一道题：标记为不再出现，并同步移出错题集。
   `CREATE OR REPLACE FUNCTION api.slay_question(p_question_id bigint)
    RETURNS json
@@ -348,6 +428,8 @@ const STATEMENTS = [
      TO anon, authenticated;
    GRANT EXECUTE ON FUNCTION api.slay_question(bigint)
      TO anon, authenticated;
+   GRANT EXECUTE ON FUNCTION api.slain_list() TO anon, authenticated;
+   GRANT EXECUTE ON FUNCTION api.mastered_list() TO anon, authenticated;
    GRANT EXECUTE ON FUNCTION api.stats() TO anon, authenticated;
 
    NOTIFY pgrst, 'reload schema';`,

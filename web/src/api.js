@@ -93,4 +93,14 @@ export const api = {
   slay: (id) => rpc('slay_question', {
     p_question_id: id,
   }),
+
+  /** 获取已斩的题列表（斩历史）。 */
+  slainList: async () => ({
+    questions: await rpc('slain_list', {}),
+  }),
+
+  /** 获取已掌握的题列表（已掌握历史）。 */
+  masteredList: async () => ({
+    questions: await rpc('mastered_list', {}),
+  }),
 };
