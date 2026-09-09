@@ -266,7 +266,8 @@ export default function Practice({count, mode, endless, onExit}) {
           {mode === 'mistakes' ?
               '错题重练' :
               (mode === 'exam' ? '考试模式' :
-                  (endless ? '无限刷题' : '刷题模式'))}
+                  (mode === 'fresh' ? '只做新题' :
+                      (endless ? '无限刷题' : '刷题模式')))}
         </h1>
         <div className="topbar__right">
           {`对 ${roundStats.correct} · 错 ${roundStats.wrong}`}
@@ -317,7 +318,9 @@ export default function Practice({count, mode, endless, onExit}) {
                       '点击选项即提交，答对自动下一题，本轮不重复' :
                       (mode === 'exam' ?
                           '考试模式：全部随机，答对自动下一题' :
-                          '点击选项即提交答案，答对自动跳下一题')}
+                          (mode === 'fresh' ?
+                              '只做没做过的题，答错重排到队尾直到答对' :
+                              '点击选项即提交答案，答对自动跳下一题'))}
                 </p>
               )}
             </section>

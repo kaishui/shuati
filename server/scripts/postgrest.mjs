@@ -62,6 +62,9 @@ const STATEMENTS = [
   //   mistakes：只出未解决错题；排除已斩。
   //   endless（无限）：全部随机，排除已掌握题与已斩题（本轮不重复）。
   //   exam（考试）：全部随机，排除已斩题（含已掌握题，考全部）。
+  //   fresh（新题）：只出「完全没做过」的题——既无作答记录、无掌握记录、
+  //     也无错题记录；排除已斩。答错的题在本轮重排到队尾，答对后记入
+  //     已掌握，之后不再作为「新题」出现。
   // p_exclude 排除已作答题目（无限/考试本轮不重复）。
   // 含 random()，声明 VOLATILE；search_path 置空 + 全限定表名防劫持。
   `CREATE OR REPLACE FUNCTION api.practice_questions(
@@ -90,8 +93,15 @@ const STATEMENTS = [
          ON m.question_id = q.id AND m.resolved = FALSE
        LEFT JOIN public.progress p
          ON p.question_id = q.id
+       LEFT JOIN public.attempts a
+         ON a.question_id = q.id
        WHERE NOT (p.question_id IS NOT NULL AND p.slain)
          AND (p_mode <> 'mistakes' OR m.question_id IS NOT NULL)
+         -- fresh 模式只保留「完全没做过」的题（无错题、无掌握、无作答）。
+         AND (p_mode <> 'fresh' OR (
+               m.question_id IS NULL
+               AND p.question_id IS NULL
+               AND a.question_id IS NULL))
          AND NOT (q.id = ANY(COALESCE(p_exclude, ARRAY[]::bigint[])))
      ),
      -- 随机池：endless（排除已掌握）与 exam（含已掌握）全随机抽取。
@@ -116,7 +126,14 @@ const STATEMENTS = [
      fresh_pool AS (
        SELECT * FROM candidate
        WHERE bucket = 1
-         AND p_mode NOT IN ('endless', 'exam')
+         AND p_mode NOT IN ('endless', 'exam', 'fresh')
+       ORDER BY random()
+       LIMIT LEAST(GREATEST(p_count, 1), 100)
+     ),
+     -- 纯新题池：fresh 模式只出「完全没做过」的题（candidate 已过滤）。
+     untouched_pool AS (
+       SELECT * FROM candidate
+       WHERE p_mode = 'fresh'
        ORDER BY random()
        LIMIT LEAST(GREATEST(p_count, 1), 100)
      ),
@@ -136,13 +153,15 @@ const STATEMENTS = [
        SELECT * FROM fresh_pool
        UNION ALL
        SELECT * FROM mastered_pool
+       UNION ALL
+       SELECT * FROM untouched_pool
      ),
      -- 先按优先级排序并截断到目标题数，再聚合。
      -- endless/exam 全随机不按 bucket 排序；常规模式错题优先。
      limited AS (
        SELECT * FROM combined
        ORDER BY
-         CASE WHEN p_mode IN ('endless', 'exam') THEN 0 ELSE bucket END,
+         CASE WHEN p_mode IN ('endless', 'exam', 'fresh') THEN 0 ELSE bucket END,
          random()
        LIMIT LEAST(GREATEST(p_count, 1), 100)
      )

@@ -2,11 +2,12 @@ import {useEffect, useState} from 'react';
 
 import {api} from '../api.js';
 
-/** 刷题轮次选项：固定题数 + 无限 + 考试（全部随机）。 */
+/** 刷题轮次选项：固定题数 + 无限 + 考试（全部随机）+ 纯新题。 */
 const ROUND_MODES = [
   {key: '50', label: '50 题', count: 50},
   {key: 'endless', label: '无限', count: 10, endless: true},
   {key: 'exam', label: '考试 100', count: 100, exam: true},
+  {key: 'fresh', label: '只做新题', count: 10, fresh: true},
 ];
 
 /** 统计卡片：数值 + 标签；可选点击跳转到对应题库。 */
@@ -89,7 +90,8 @@ export default function Home({onPractice, onMistakes}) {
               onClick={() => {
                 const option = ROUND_MODES.find(
                     (item) => item.key === modeKey);
-                onPractice(option.count, option.endless, option.exam);
+                onPractice(
+                    option.count, option.endless, option.exam, option.fresh);
               }}>
             开始刷题
           </button>
