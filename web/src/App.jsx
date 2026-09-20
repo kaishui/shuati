@@ -60,10 +60,12 @@ export default function App() {
 
   return (
     <Home
-        onPractice={(count, endless, exam, fresh, hard) =>
+        onPractice={(count, endless, exam, fresh, hard, freshseq) =>
           startPractice(
               count,
-              hard ? 'hard' : (fresh ? 'fresh' : (exam ? 'exam' : 'practice')),
+              freshseq ? 'freshseq' :
+                  (hard ? 'hard' :
+                      (fresh ? 'fresh' : (exam ? 'exam' : 'practice'))),
               'home', endless)}
         onMistakes={() => setView({name: 'mistakes'})} />
   );

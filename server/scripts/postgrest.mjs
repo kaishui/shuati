@@ -71,6 +71,8 @@ const STATEMENTS = [
   //   fresh（新题）：只出「完全没做过」的题——既无作答记录、无掌握记录、
   //     也无错题记录；排除已斩。答错的题在本轮重排到队尾，答对后记入
   //     已掌握，之后不再作为「新题」出现。
+  //   freshseq（顺序新题）：与 fresh 相同的「完全没做过」过滤，但一次性
+  //     出满全部未做过的题，按题号顺序（不随机）。
   //   hard（难题）：只出标记为难题（is_hard）的题，一次性出满全部难题；
   //     按题号顺序出题（不随机）；排除已斩。
   // p_exclude 排除已作答题目（无限/考试本轮不重复）。
@@ -105,8 +107,8 @@ const STATEMENTS = [
       -- 注意：attempts 不可 JOIN（一题多次作答会放大行数），用 NOT EXISTS。
       WHERE NOT (p.question_id IS NOT NULL AND p.slain)
         AND (p_mode <> 'mistakes' OR m.question_id IS NOT NULL)
-        -- fresh 模式只保留「完全没做过」的题（无错题、无掌握、无作答）。
-        AND (p_mode <> 'fresh' OR (
+        -- fresh/freshseq 模式只保留「完全没做过」的题（无错题、无掌握、无作答）。
+        AND (p_mode NOT IN ('fresh', 'freshseq') OR (
               m.question_id IS NULL
               AND p.question_id IS NULL
               AND NOT EXISTS (
@@ -122,47 +124,54 @@ const STATEMENTS = [
        WHERE p_mode IN ('endless', 'exam')
          AND (p_mode = 'exam' OR bucket <> 2)
        ORDER BY random()
-       LIMIT LEAST(GREATEST(p_count, 1), 300)
+       LIMIT LEAST(GREATEST(p_count, 1), 5000)
      ),
     -- 错题池：常规模式最多抽 5 道；mistakes 模式抽满 p_count。
     mistake_pool AS (
       SELECT * FROM candidate
       WHERE bucket = 0
-        AND p_mode NOT IN ('endless', 'exam', 'hard')
+        AND p_mode NOT IN ('endless', 'exam', 'hard', 'freshseq')
       ORDER BY random()
       LIMIT CASE WHEN p_mode = 'mistakes'
-                 THEN LEAST(GREATEST(p_count, 1), 300)
+                 THEN LEAST(GREATEST(p_count, 1), 5000)
                  ELSE 5 END
     ),
     -- 新题池（未掌握、非错题）。
     fresh_pool AS (
       SELECT * FROM candidate
       WHERE bucket = 1
-        AND p_mode NOT IN ('endless', 'exam', 'fresh', 'hard')
+        AND p_mode NOT IN ('endless', 'exam', 'fresh', 'hard', 'freshseq')
       ORDER BY random()
-      LIMIT LEAST(GREATEST(p_count, 1), 300)
+      LIMIT LEAST(GREATEST(p_count, 1), 5000)
     ),
     -- 纯新题池：fresh 模式只出「完全没做过」的题（candidate 已过滤）。
     untouched_pool AS (
       SELECT * FROM candidate
       WHERE p_mode = 'fresh'
       ORDER BY random()
-      LIMIT LEAST(GREATEST(p_count, 1), 300)
+      LIMIT LEAST(GREATEST(p_count, 1), 5000)
+    ),
+    -- 顺序新题池：freshseq 模式按题号顺序出全部未做过的题（不随机）。
+    freshseq_pool AS (
+      SELECT * FROM candidate
+      WHERE p_mode = 'freshseq'
+      ORDER BY source_no
+      LIMIT LEAST(GREATEST(p_count, 1), 5000)
     ),
     -- 难题池：hard 模式按题号顺序出全部难题（不随机）。
     hard_pool AS (
       SELECT * FROM candidate
       WHERE p_mode = 'hard'
       ORDER BY source_no
-      LIMIT LEAST(GREATEST(p_count, 1), 300)
+      LIMIT LEAST(GREATEST(p_count, 1), 5000)
     ),
     -- 已掌握题池：仅在错题+新题不足时补齐。
     mastered_pool AS (
       SELECT * FROM candidate
       WHERE bucket = 2
-        AND p_mode NOT IN ('endless', 'exam', 'hard')
+        AND p_mode NOT IN ('endless', 'exam', 'hard', 'freshseq')
       ORDER BY random()
-      LIMIT LEAST(GREATEST(p_count, 1), 300)
+      LIMIT LEAST(GREATEST(p_count, 1), 5000)
     ),
     combined AS (
       SELECT * FROM random_pool
@@ -176,18 +185,20 @@ const STATEMENTS = [
       SELECT * FROM untouched_pool
       UNION ALL
       SELECT * FROM hard_pool
+      UNION ALL
+      SELECT * FROM freshseq_pool
     ),
     -- 先按优先级排序并截断到目标题数，再聚合。
     -- endless/exam 全随机不按 bucket 排序；常规模式错题优先；
-    -- hard 模式按题号顺序（不随机）。
+    -- hard/freshseq 模式按题号顺序（不随机）。
     limited AS (
       SELECT * FROM combined
       ORDER BY
-        CASE WHEN p_mode = 'hard' THEN source_no
+        CASE WHEN p_mode IN ('hard', 'freshseq') THEN source_no
              WHEN p_mode IN ('endless', 'exam', 'fresh') THEN 0
              ELSE bucket END,
-        CASE WHEN p_mode = 'hard' THEN 0 ELSE random() END
-      LIMIT LEAST(GREATEST(p_count, 1), 300)
+        CASE WHEN p_mode IN ('hard', 'freshseq') THEN 0 ELSE random() END
+      LIMIT LEAST(GREATEST(p_count, 1), 5000)
     )
      SELECT COALESCE(
        json_agg(

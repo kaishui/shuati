@@ -8,6 +8,7 @@ const ROUND_MODES = [
   {key: 'endless', label: '无限', count: 10, endless: true},
   {key: 'exam', label: '考试 100', count: 100, exam: true},
   {key: 'fresh', label: '只做新题', count: 10, fresh: true},
+  {key: 'freshseq', label: '顺序新题', count: 5000, freshseq: true},
   {key: 'hard', label: '难题 256', count: 256, hard: true},
 ];
 
@@ -93,7 +94,7 @@ export default function Home({onPractice, onMistakes}) {
                     (item) => item.key === modeKey);
                 onPractice(
                     option.count, option.endless, option.exam, option.fresh,
-                    option.hard);
+                    option.hard, option.freshseq);
               }}>
             开始刷题
           </button>
