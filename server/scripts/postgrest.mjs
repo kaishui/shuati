@@ -71,8 +71,8 @@ const STATEMENTS = [
   //   fresh（新题）：只出「完全没做过」的题——既无作答记录、无掌握记录、
   //     也无错题记录；排除已斩。答错的题在本轮重排到队尾，答对后记入
   //     已掌握，之后不再作为「新题」出现。
-  //   hard（难题）：只出标记为难题（is_hard）的题；新题优先，混入最多
-  //     5 道未解决错题；排除已斩。
+  //   hard（难题）：只出标记为难题（is_hard）的题，一次性出满全部难题；
+  //     按题号顺序出题（不随机）；排除已斩。
   // p_exclude 排除已作答题目（无限/考试本轮不重复）。
   // 含 random()，声明 VOLATILE；search_path 置空 + 全限定表名防劫持。
   `CREATE OR REPLACE FUNCTION api.practice_questions(
@@ -123,59 +123,71 @@ const STATEMENTS = [
        ORDER BY random()
        LIMIT LEAST(GREATEST(p_count, 1), 300)
      ),
-     -- 错题池：常规模式最多抽 5 道；mistakes 模式抽满 p_count。
-     mistake_pool AS (
-       SELECT * FROM candidate
-       WHERE bucket = 0
-         AND p_mode NOT IN ('endless', 'exam')
-       ORDER BY random()
-       LIMIT CASE WHEN p_mode = 'mistakes'
-                  THEN LEAST(GREATEST(p_count, 1), 300)
-                  ELSE 5 END
-     ),
-     -- 新题池（未掌握、非错题）。
-     fresh_pool AS (
-       SELECT * FROM candidate
-       WHERE bucket = 1
-         AND p_mode NOT IN ('endless', 'exam', 'fresh')
-       ORDER BY random()
-       LIMIT LEAST(GREATEST(p_count, 1), 300)
-     ),
-     -- 纯新题池：fresh 模式只出「完全没做过」的题（candidate 已过滤）。
-     untouched_pool AS (
-       SELECT * FROM candidate
-       WHERE p_mode = 'fresh'
-       ORDER BY random()
-       LIMIT LEAST(GREATEST(p_count, 1), 300)
-     ),
-     -- 已掌握题池：仅在错题+新题不足时补齐。
-     mastered_pool AS (
-       SELECT * FROM candidate
-       WHERE bucket = 2
-         AND p_mode NOT IN ('endless', 'exam')
-       ORDER BY random()
-       LIMIT LEAST(GREATEST(p_count, 1), 300)
-     ),
-     combined AS (
-       SELECT * FROM random_pool
-       UNION ALL
-       SELECT * FROM mistake_pool
-       UNION ALL
-       SELECT * FROM fresh_pool
-       UNION ALL
-       SELECT * FROM mastered_pool
-       UNION ALL
-       SELECT * FROM untouched_pool
-     ),
-     -- 先按优先级排序并截断到目标题数，再聚合。
-     -- endless/exam 全随机不按 bucket 排序；常规模式错题优先。
-     limited AS (
-       SELECT * FROM combined
-       ORDER BY
-         CASE WHEN p_mode IN ('endless', 'exam', 'fresh') THEN 0 ELSE bucket END,
-         random()
-       LIMIT LEAST(GREATEST(p_count, 1), 300)
-     )
+    -- 错题池：常规模式最多抽 5 道；mistakes 模式抽满 p_count。
+    mistake_pool AS (
+      SELECT * FROM candidate
+      WHERE bucket = 0
+        AND p_mode NOT IN ('endless', 'exam', 'hard')
+      ORDER BY random()
+      LIMIT CASE WHEN p_mode = 'mistakes'
+                 THEN LEAST(GREATEST(p_count, 1), 300)
+                 ELSE 5 END
+    ),
+    -- 新题池（未掌握、非错题）。
+    fresh_pool AS (
+      SELECT * FROM candidate
+      WHERE bucket = 1
+        AND p_mode NOT IN ('endless', 'exam', 'fresh', 'hard')
+      ORDER BY random()
+      LIMIT LEAST(GREATEST(p_count, 1), 300)
+    ),
+    -- 纯新题池：fresh 模式只出「完全没做过」的题（candidate 已过滤）。
+    untouched_pool AS (
+      SELECT * FROM candidate
+      WHERE p_mode = 'fresh'
+      ORDER BY random()
+      LIMIT LEAST(GREATEST(p_count, 1), 300)
+    ),
+    -- 难题池：hard 模式按题号顺序出全部难题（不随机）。
+    hard_pool AS (
+      SELECT * FROM candidate
+      WHERE p_mode = 'hard'
+      ORDER BY source_no
+      LIMIT LEAST(GREATEST(p_count, 1), 300)
+    ),
+    -- 已掌握题池：仅在错题+新题不足时补齐。
+    mastered_pool AS (
+      SELECT * FROM candidate
+      WHERE bucket = 2
+        AND p_mode NOT IN ('endless', 'exam', 'hard')
+      ORDER BY random()
+      LIMIT LEAST(GREATEST(p_count, 1), 300)
+    ),
+    combined AS (
+      SELECT * FROM random_pool
+      UNION ALL
+      SELECT * FROM mistake_pool
+      UNION ALL
+      SELECT * FROM fresh_pool
+      UNION ALL
+      SELECT * FROM mastered_pool
+      UNION ALL
+      SELECT * FROM untouched_pool
+      UNION ALL
+      SELECT * FROM hard_pool
+    ),
+    -- 先按优先级排序并截断到目标题数，再聚合。
+    -- endless/exam 全随机不按 bucket 排序；常规模式错题优先；
+    -- hard 模式按题号顺序（不随机）。
+    limited AS (
+      SELECT * FROM combined
+      ORDER BY
+        CASE WHEN p_mode = 'hard' THEN source_no
+             WHEN p_mode IN ('endless', 'exam', 'fresh') THEN 0
+             ELSE bucket END,
+        CASE WHEN p_mode = 'hard' THEN 0 ELSE random() END
+      LIMIT LEAST(GREATEST(p_count, 1), 300)
+    )
      SELECT COALESCE(
        json_agg(
          json_build_object(
