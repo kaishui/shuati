@@ -121,7 +121,7 @@ const STATEMENTS = [
        WHERE p_mode IN ('endless', 'exam')
          AND (p_mode = 'exam' OR bucket <> 2)
        ORDER BY random()
-       LIMIT LEAST(GREATEST(p_count, 1), 100)
+       LIMIT LEAST(GREATEST(p_count, 1), 300)
      ),
      -- 错题池：常规模式最多抽 5 道；mistakes 模式抽满 p_count。
      mistake_pool AS (
@@ -130,7 +130,7 @@ const STATEMENTS = [
          AND p_mode NOT IN ('endless', 'exam')
        ORDER BY random()
        LIMIT CASE WHEN p_mode = 'mistakes'
-                  THEN LEAST(GREATEST(p_count, 1), 100)
+                  THEN LEAST(GREATEST(p_count, 1), 300)
                   ELSE 5 END
      ),
      -- 新题池（未掌握、非错题）。
@@ -139,14 +139,14 @@ const STATEMENTS = [
        WHERE bucket = 1
          AND p_mode NOT IN ('endless', 'exam', 'fresh')
        ORDER BY random()
-       LIMIT LEAST(GREATEST(p_count, 1), 100)
+       LIMIT LEAST(GREATEST(p_count, 1), 300)
      ),
      -- 纯新题池：fresh 模式只出「完全没做过」的题（candidate 已过滤）。
      untouched_pool AS (
        SELECT * FROM candidate
        WHERE p_mode = 'fresh'
        ORDER BY random()
-       LIMIT LEAST(GREATEST(p_count, 1), 100)
+       LIMIT LEAST(GREATEST(p_count, 1), 300)
      ),
      -- 已掌握题池：仅在错题+新题不足时补齐。
      mastered_pool AS (
@@ -154,7 +154,7 @@ const STATEMENTS = [
        WHERE bucket = 2
          AND p_mode NOT IN ('endless', 'exam')
        ORDER BY random()
-       LIMIT LEAST(GREATEST(p_count, 1), 100)
+       LIMIT LEAST(GREATEST(p_count, 1), 300)
      ),
      combined AS (
        SELECT * FROM random_pool
@@ -174,7 +174,7 @@ const STATEMENTS = [
        ORDER BY
          CASE WHEN p_mode IN ('endless', 'exam', 'fresh') THEN 0 ELSE bucket END,
          random()
-       LIMIT LEAST(GREATEST(p_count, 1), 100)
+       LIMIT LEAST(GREATEST(p_count, 1), 300)
      )
      SELECT COALESCE(
        json_agg(

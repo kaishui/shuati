@@ -8,7 +8,7 @@ const ROUND_MODES = [
   {key: 'endless', label: '无限', count: 10, endless: true},
   {key: 'exam', label: '考试 100', count: 100, exam: true},
   {key: 'fresh', label: '只做新题', count: 10, fresh: true},
-  {key: 'hard', label: '难题', count: 50, hard: true},
+  {key: 'hard', label: '难题 256', count: 256, hard: true},
 ];
 
 /** 统计卡片：数值 + 标签；可选点击跳转到对应题库。 */
