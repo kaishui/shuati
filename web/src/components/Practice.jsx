@@ -267,7 +267,8 @@ export default function Practice({count, mode, endless, onExit}) {
               '错题重练' :
               (mode === 'exam' ? '考试模式' :
                   (mode === 'fresh' ? '只做新题' :
-                      (endless ? '无限刷题' : '刷题模式')))}
+                      (mode === 'hard' ? '难题专项' :
+                          (endless ? '无限刷题' : '刷题模式'))))}
         </h1>
         <div className="topbar__right">
           {`对 ${roundStats.correct} · 错 ${roundStats.wrong}`}
@@ -301,6 +302,9 @@ export default function Practice({count, mode, endless, onExit}) {
             <section className="card">
               <div className="question-meta">
                 <span className="badge">{`第${displayQuestion.sourceNo}题`}</span>
+                {displayQuestion.isHard && (
+                  <span className="badge badge--accent">难题</span>
+                )}
                 {displayQuestion.requeued && (
                   <span className="badge badge--danger">错题重做</span>
                 )}
@@ -320,7 +324,9 @@ export default function Practice({count, mode, endless, onExit}) {
                           '考试模式：全部随机，答对自动下一题' :
                           (mode === 'fresh' ?
                               '只做没做过的题，答错重排到队尾直到答对' :
-                              '点击选项即提交答案，答对自动跳下一题'))}
+                              (mode === 'hard' ?
+                                  '难题专项：只刷标记为难题的题' :
+                                  '点击选项即提交答案，答对自动跳下一题')))}
                 </p>
               )}
             </section>

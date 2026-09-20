@@ -42,6 +42,12 @@ const STATEMENTS = [
    ALTER TABLE mistakes
      ADD COLUMN IF NOT EXISTS last_correct_date date;`,
 
+  // ---- 组 A1b：难题标记列（「难题」题库是主库的子集，按题号打标）----
+  `ALTER TABLE questions
+     ADD COLUMN IF NOT EXISTS is_hard boolean NOT NULL DEFAULT FALSE;
+   CREATE INDEX IF NOT EXISTS questions_hard_idx
+     ON questions (id) WHERE is_hard;`,
+
   // ---- 组 A2：每题掌握/斩状态表（记录做对、手动斩掉不再出现）----
   `CREATE TABLE IF NOT EXISTS progress (
      question_id BIGINT PRIMARY KEY REFERENCES questions(id) ON DELETE CASCADE,
@@ -65,6 +71,8 @@ const STATEMENTS = [
   //   fresh（新题）：只出「完全没做过」的题——既无作答记录、无掌握记录、
   //     也无错题记录；排除已斩。答错的题在本轮重排到队尾，答对后记入
   //     已掌握，之后不再作为「新题」出现。
+  //   hard（难题）：只出标记为难题（is_hard）的题；新题优先，混入最多
+  //     5 道未解决错题；排除已斩。
   // p_exclude 排除已作答题目（无限/考试本轮不重复）。
   // 含 random()，声明 VOLATILE；search_path 置空 + 全限定表名防劫持。
   `CREATE OR REPLACE FUNCTION api.practice_questions(
@@ -81,6 +89,7 @@ const STATEMENTS = [
          q.source_no,
          q.stem,
          q.options,
+         q.is_hard,
          COALESCE(m.wrong_count, 0) AS wrong_count,
          CASE
            WHEN p_mode = 'mistakes' THEN 0
@@ -102,6 +111,8 @@ const STATEMENTS = [
                m.question_id IS NULL
                AND p.question_id IS NULL
                AND a.question_id IS NULL))
+         -- hard 模式只保留难题。
+         AND (p_mode <> 'hard' OR q.is_hard)
          AND NOT (q.id = ANY(COALESCE(p_exclude, ARRAY[]::bigint[])))
      ),
      -- 随机池：endless（排除已掌握）与 exam（含已掌握）全随机抽取。
@@ -172,7 +183,8 @@ const STATEMENTS = [
            'sourceNo', c.source_no,
            'stem', c.stem,
            'options', c.options,
-           'wrongCount', c.wrong_count
+           'wrongCount', c.wrong_count,
+           'isHard', c.is_hard
          )
        ),
        '[]'::json
@@ -425,6 +437,8 @@ const STATEMENTS = [
    AS $$
      SELECT json_build_object(
        'questions', (SELECT count(*)::int FROM public.questions),
+       'hard', (SELECT count(*)::int FROM public.questions
+                WHERE is_hard),
        'attempts', (SELECT count(*)::int FROM public.attempts),
        'correct', (SELECT count(*)::int FROM public.attempts
                    WHERE is_correct),

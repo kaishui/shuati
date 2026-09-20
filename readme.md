@@ -16,6 +16,9 @@
 - **只做新题模式**：只出「完全没做过」的题（无作答、无掌握、无
   错题记录），答错在本轮重排到队尾直到答对，答对即记入已掌握、
   之后不再作为新题出现
+- **难题专项模式**：只刷标记为「难题」的题（`doc/难题.txt` 是主库
+  子集，按题号打标）；新题优先 + 混入最多 5 道错题巩固，答题记录
+  与错题集复用主库
 - **回看**：答题后可点「上一题」回看已作答题目的详情与解析证据
 - **错题集**：答错的题进入错题集并累计错误次数；**需隔天答对
   两次**才自动移出（当天重复答对不计次）；错题页无需等待列表
@@ -40,6 +43,7 @@
 ```bash
 npm install          # 安装所有依赖（npm workspaces）
 npm run seed         # 解析 doc/试题.docx 并灌入数据库（幂等，可重复执行）
+npm run seed:hard -w server  # 解析 doc/难题.txt，给难题打标记（幂等）
 npm run postgrest -w server   # 创建 PostgREST RPC 函数与安全边界（幂等）
 cp web/.env.example web/.env  # 填入 VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY
 npm run dev -w web   # 前端 :5173，直连 Supabase
@@ -94,8 +98,8 @@ web/
 
 | RPC 函数 | 参数 | 说明 |
 | --- | --- | --- |
-| `stats()` | — | 题库总量、作答数、已掌握数、待练错题数 |
-| `practice_questions` | `p_count`(1~50)、`p_mode`('practice'/'mistakes'/'endless'/'exam'/'fresh')、`p_exclude`(可选，排除已答题) | 出题：新题优先，混入最多 5 道错题；排除已斩题；mistakes 只出错题；endless/exam 全随机；**fresh 只出完全没做过的题**；exclude 保证本轮不重复 |
+| `stats()` | — | 题库总量、难题数、作答数、已掌握数、待练错题数 |
+| `practice_questions` | `p_count`(1~50)、`p_mode`('practice'/'mistakes'/'endless'/'exam'/'fresh'/'hard')、`p_exclude`(可选，排除已答题) | 出题：新题优先，混入最多 5 道错题；排除已斩题；mistakes 只出错题；endless/exam 全随机；**fresh 只出完全没做过的题**；**hard 只出难题（is_hard）**；exclude 保证本轮不重复 |
 | `submit_answer` | `p_question_id`、`p_selected`(A-E)、`p_mode` | 判定 + 证据（题干原文、正确选项原文）；答对记入「已掌握」；答错进错题集并清零进度；**隔天答对两次**移出错题集 |
 | `mistake_list()` | — | 未解决错题列表（含答对进度 correctStreak，排除已斩） |
 | `resolve_mistake` | `p_question_id` | 手动移出错题集 |

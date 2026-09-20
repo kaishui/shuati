@@ -140,6 +140,11 @@ button {
   background: var(--danger-weak);
 }
 
+.badge--accent {
+  color: var(--primary);
+  background: var(--primary-weak);
+}
+
 .badge--good {
   color: var(--success);
   background: var(--success-weak);
