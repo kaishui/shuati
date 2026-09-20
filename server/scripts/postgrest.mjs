@@ -97,20 +97,21 @@ const STATEMENTS = [
            WHEN p.mastered THEN 2
            ELSE 1
          END AS bucket
-       FROM public.questions q
-       LEFT JOIN public.mistakes m
-         ON m.question_id = q.id AND m.resolved = FALSE
-       LEFT JOIN public.progress p
-         ON p.question_id = q.id
-       LEFT JOIN public.attempts a
-         ON a.question_id = q.id
-       WHERE NOT (p.question_id IS NOT NULL AND p.slain)
-         AND (p_mode <> 'mistakes' OR m.question_id IS NOT NULL)
-         -- fresh 模式只保留「完全没做过」的题（无错题、无掌握、无作答）。
-         AND (p_mode <> 'fresh' OR (
-               m.question_id IS NULL
-               AND p.question_id IS NULL
-               AND a.question_id IS NULL))
+      FROM public.questions q
+      LEFT JOIN public.mistakes m
+        ON m.question_id = q.id AND m.resolved = FALSE
+      LEFT JOIN public.progress p
+        ON p.question_id = q.id
+      -- 注意：attempts 不可 JOIN（一题多次作答会放大行数），用 NOT EXISTS。
+      WHERE NOT (p.question_id IS NOT NULL AND p.slain)
+        AND (p_mode <> 'mistakes' OR m.question_id IS NOT NULL)
+        -- fresh 模式只保留「完全没做过」的题（无错题、无掌握、无作答）。
+        AND (p_mode <> 'fresh' OR (
+              m.question_id IS NULL
+              AND p.question_id IS NULL
+              AND NOT EXISTS (
+                SELECT 1 FROM public.attempts a
+                WHERE a.question_id = q.id)))
          -- hard 模式只保留难题。
          AND (p_mode <> 'hard' OR q.is_hard)
          AND NOT (q.id = ANY(COALESCE(p_exclude, ARRAY[]::bigint[])))
